@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException, Query
 
+from datos import cargar_libros, guardar_libros
 from schemas import LibroEntrada, LibroParcial, LibroSalida
 
 app = FastAPI()
-libros = []
-proximo_id = 1
+libros = cargar_libros()
+proximo_id = max((libro["id"] for libro in libros), default=0) + 1
 
 
 def buscar_libro(id: int) -> dict:
@@ -54,12 +55,16 @@ def crear_libro(datos: LibroEntrada):
     titulo = datos.titulo.lower()
     autor = datos.autor.lower()
     for existente in libros:
-        if existente["titulo"].lower() == titulo and existente["autor"].lower() == autor:
+        if (
+            existente["titulo"].lower() == titulo
+            and existente["autor"].lower() == autor
+        ):
             raise HTTPException(status_code=409, detail="El libro ya existe")
 
     libro = {"id": proximo_id, **datos.model_dump()}
     libros.append(libro)
     proximo_id += 1
+    guardar_libros(libros)
     return libro
 
 
@@ -72,16 +77,21 @@ def obtener_libro(id: int):
 def reemplazar_libro(id: int, datos: LibroEntrada):
     libro = buscar_libro(id)
     libro.update(datos.model_dump())
+    guardar_libros(libros)
     return libro
 
 
 @app.patch("/libros/{id}", response_model=LibroSalida)
 def actualizar_libro(id: int, datos: LibroParcial):
     libro = buscar_libro(id)
-    libro.update(datos.model_dump(exclude_unset=True))
+    cambios = datos.model_dump(exclude_unset=True)
+    if cambios:
+        libro.update(cambios)
+        guardar_libros(libros)
     return libro
 
 
 @app.delete("/libros/{id}", status_code=204)
 def eliminar_libro(id: int):
     libros.remove(buscar_libro(id))
+    guardar_libros(libros)
